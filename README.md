@@ -41,13 +41,33 @@ A multiplicative modifier scales the fit score based on real platform activity:
 ### 4. Dynamically Tailored Reasonings
 For the top 100 candidates, the system generates a tailored, fact-based reasoning statement highlighting exact years of experience, current role, primary skills, location fit, and active engagement metrics to pass manual review.
 
----
+## Repository Structure
+
+```
+India-Runs/
+├── data/                             # Raw candidate datasets and schemas
+│   ├── candidates.jsonl              # Full dataset (100k candidates)
+│   ├── sample_candidates.json        # Small sample candidates dataset
+│   └── candidate_schema.json         # Candidate JSON schema
+├── src/                              # Core candidate discovery and ranking code
+│   └── rank.py                       # Main evaluation & ranking script
+├── submission/                       # Challenge submissions and metadata
+│   ├── submission.csv                # Output containing top 100 candidates
+│   ├── sample_submission.csv         # Target submission layout reference
+│   ├── submission_metadata.yaml      # Submission metadata with required stats
+│   └── submission_metadata_template.yaml # Schema metadata template
+├── report/                           # Reference files, analysis and validation notebooks
+│   ├── validation.ipynb              # Jupyter notebook for scoring analysis & honeypots list
+│   └── *.docx, *.txt                 # Hackathon instructions and Redrob signals documentation
+└── testing/                          # Test scripts and format verification
+    └── validate_submission.py        # Submission format compliance validator
+```
 
 ## Getting Started
 
 ### Prerequisites
 * Python 3.8+
-* standard libraries (`json`, `csv`, `math`, `datetime`, `argparse`)
+* Standard libraries (`json`, `csv`, `math`, `datetime`, `argparse`)
 
 ### Installation & Run
 
@@ -57,14 +77,14 @@ For the top 100 candidates, the system generates a tailored, fact-based reasonin
    cd India-Runs
    ```
 
-2. Place the `candidates.jsonl` file in the root directory.
+2. Place the `candidates.jsonl` file in the `data/` directory.
 
 3. Run the ranker:
    ```bash
-   python rank.py --candidates ./candidates.jsonl --out ./submission.csv
+   python src/rank.py --candidates data/candidates.jsonl --out submission/submission.csv
    ```
 
 4. Validate the output format:
    ```bash
-   python validate_submission.py ./submission.csv
+   python testing/validate_submission.py submission/submission.csv
    ```
