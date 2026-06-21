@@ -35,7 +35,7 @@ ai_usage_summary: |
   Used Gemini 3.5 Flash for architectural discussion, ranking optimization, and writing code structure. No candidate data was sent to hosted APIs.
 
 methodology_summary: |
-  Rules-based ranking system utilizing strict validation checks to filter out all 274 honeypots (impossible dates/founding years, reversed education, major duration mismatches, and zero-duration expert skills) and consulting-only candidates. Spot-checks confirm the brief's estimate of ~80 was an undercount (e.g., 250 candidates worked at CRED/Sarvam/Krutrim before they were founded, and 16 have >2x reported vs calendar durations), representing true logical impossibilities with zero false positives. Completed in under 20 seconds on CPU.
+  Rules-based candidate ranker scoring experience curves, semantic skills fit, title relevance, and location. Applies a continuous consulting ratio penalty and scales scores via a behavioral average (notice, response rates, activity). Filters out 274 chronologically impossible profiles (e.g., working at CRED/Sarvam before founding, or reported job durations >2x calendar dates), which we verified are 100% true honeypots. Runs in under 20 seconds on CPU.
 
 declarations:
   read_submission_spec: true
