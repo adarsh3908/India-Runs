@@ -19,10 +19,10 @@ The objective of this challenge is to build an intelligent candidate discovery a
 
 ### 1. Anomaly & Honeypot Detection
 Our ranking system includes a robust validator that screens candidates for synthetic logical contradictions, assigning a score of `-999.0` to filter them out entirely:
-* **Skill experience mismatch:** Checks if candidates claim `expert` or `advanced` proficiency in 3+ skills with `duration_months == 0`.
-* **Job duration contradictions:** Verifies that the reported job `duration_months` in the career history aligns closely (within 3 months) with the time difference between its `start_date` and `end_date`.
-* **Education timing mismatch:** Flags candidates who started full-time work more than 6 years before beginning their college degree.
-* **Startup founding dates:** Flags candidates who claim to have worked at startups like `Krutrim` before 2023, `Sarvam AI` before 2023, or `CRED` before 2018.
+* **Skill experience mismatch:** Checks if candidates claim `expert` or `advanced` proficiency in 5+ skills with `duration_months == 0`.
+* **Job duration contradictions:** Verifies if reported job `duration_months` exceeds calendar date range by more than a factor of 2 + 12 months.
+* **Education timing mismatch:** Flags candidates who started working more than 15 years before starting their college degree (impossible age conflict).
+* **Startup founding dates:** Flags candidates who claim to have worked at companies before their actual founding years (e.g. Krutrim before 2023, Sarvam AI before 2023, CRED before 2018).
 
 ### 2. Candidate Fit Scoring
 Candidates are scored based on the following:
@@ -62,6 +62,9 @@ India-Runs/
 └── testing/                          # Test scripts and format verification
     └── validate_submission.py        # Submission format compliance validator
 ```
+
+> [!NOTE]
+> `candidates.jsonl` is excluded from version control via `.gitignore` due to its large size (~487MB). You must supply this file (the 100K candidates dataset from the hackathon dashboard) and place it in the `data/` directory before running any scripts or notebooks.
 
 ## Getting Started
 
