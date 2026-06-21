@@ -16,3 +16,5 @@ check_founding_violations.py
 check_honeypot_candidates.py
 get_all_honeypots.py
 *.log
+__pycache__/
+*.pyc
