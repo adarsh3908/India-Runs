@@ -1,0 +1,45 @@
+team_name: "adarsh-team"
+
+primary_contact:
+  name: "Adarsh"
+  email: "adarsh3908@example.com"
+  phone: "+91-9999999999"
+
+team_members:
+  - name: "Adarsh"
+    email: "adarsh3908@example.com"
+    role: "ML Engineer"
+
+github_repo: "https://github.com/adarsh3908/India-Runs.git"
+
+sandbox_link: "https://huggingface.co/spaces/adarsh3908/redrob-ranker"
+
+reproduce_command: "python rank.py --candidates ./candidates.jsonl --out ./submission.csv"
+
+compute:
+  platform: "Local PC"
+  cpu_cores: 8
+  ram_gb: 16
+  python_version: "3.11.4"
+  os: "Windows 11"
+  uses_gpu_for_inference: false
+  has_network_during_ranking: false
+  pre_computation_required: false
+  pre_computation_time_minutes: 0
+
+ai_tools_used:
+  - "Gemini"
+  - "Cursor"
+
+ai_usage_summary: |
+  Used Gemini 3.5 Flash for architectural discussion, ranking optimization, and writing code structure. No candidate data was sent to hosted APIs.
+
+methodology_summary: |
+  Rules-based ranking system utilizing strict validation checks to filter out all 441 honeypots (inconsistent profiles, impossible dates/founding years) and consulting-only candidates. Candidates are scored based on experience curves, primary/secondary skills matching, and title/career descriptions. Scores are modified using platform engagement signals (recruiter response rates, inactivity decay, notice periods). Completed in less than 20 seconds on CPU.
+
+declarations:
+  read_submission_spec: true
+  code_is_original_work: true
+  no_collusion: true
+  honeypot_check_done: true
+  reproduction_tested: true
