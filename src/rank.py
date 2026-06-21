@@ -5,21 +5,21 @@ import argparse
 import csv
 from datetime import datetime
 
-# Expanded consulting/IT services companies list
+# IT consulting & services companies to penalize
 consulting_companies = {
     'TCS', 'Infosys', 'Wipro', 'Accenture', 'Cognizant', 'Capgemini',
     'Tech Mahindra', 'Mphasis', 'HCL', 'Mindtree', 'Genpact AI',
     'Deloitte', 'PwC', 'EY', 'KPMG'
 }
 
-# Mismatched/disqualified titles for the AI engineering role
+# disqualified roles for founding team fit
 disqualified_titles = {
     'marketing manager', 'operations manager', 'accountant', 'sales executive',
     'hr manager', 'customer support', 'civil engineer', 'mechanical engineer',
     'project manager', 'qa engineer'
 }
 
-# Startup founding years for honeypot check
+# startup founding dates (used to filter out chronological contradictions)
 founding_years = {
     'Krutrim': 2023,
     'Sarvam AI': 2023,
@@ -37,7 +37,7 @@ founding_years = {
     'Zoho': 1996
 }
 
-# Dynamic target keywords from the Job Description
+# target keywords parsed from job description
 jd_keywords = {
     'rag', 'retrieval-augmented generation', 'vector', 'database', 'embeddings',
     'sentence-transformers', 'transformers', 'pinecone', 'weaviate', 'qdrant',
@@ -50,11 +50,7 @@ jd_keywords = {
 similarity_cache = {}
 
 def calculate_token_similarity(term, targets):
-    """
-    Computes substring match, token Jaccard similarity, and character n-gram overlap.
-    Allows flexibility for synonyms (e.g. 'ColBERT', 'hybrid search').
-    Uses module-level cache for major speedup across large datasets.
-    """
+    # compute similarity between candidate terms and JD keywords using token Jaccard and n-grams
     term_lower = term.lower().strip()
     if term_lower in similarity_cache:
         return similarity_cache[term_lower]
@@ -88,9 +84,7 @@ def calculate_token_similarity(term, targets):
     return best_sim
 
 def is_honeypot_candidate(c):
-    """
-    Identifies logically impossible or contradictory profiles (honeypots).
-    """
+    # check for logical contradictions in profile (mismatched duration, startup dates, etc.)
     prof = c.get('profile', {})
     hist = c.get('career_history', [])
     edu = c.get('education', [])
@@ -155,9 +149,7 @@ def is_honeypot_candidate(c):
     return False
 
 def calculate_consulting_ratio(hist):
-    """
-    Computes fraction of candidate's career spent in IT consulting/services firms.
-    """
+    # calculate fraction of candidate's total duration spent in consulting
     if not hist:
         return 0.0
     consulting_months = 0
@@ -173,9 +165,7 @@ def calculate_consulting_ratio(hist):
     return consulting_months / total_months
 
 def get_yoe_score(yoe):
-    """
-    Computes normalized experience fit score (out of 25.0). Peaks at 5.0 to 9.0.
-    """
+    # experience fit score (peaks at 5-9 years experience, max 25 pts)
     if 5.0 <= yoe <= 9.0:
         return 25.0
     elif yoe < 5.0:
@@ -184,9 +174,7 @@ def get_yoe_score(yoe):
         return max(0.0, 25.0 - (yoe - 9.0) * 1.5)
 
 def get_skills_score(skills):
-    """
-    Computes a score based on semantic skill relevance and experience (out of 40.0).
-    """
+    # skill scoring based on JD token similarity and duration (max 40 pts)
     if not skills:
         return 0.0
     total_match = 0.0
@@ -206,13 +194,11 @@ def get_skills_score(skills):
     return min(40.0, total_match * 8.0)
 
 def get_title_score(prof, hist):
-    """
-    Scores current and historical titles against JD requirements (out of 25.0).
-    """
+    # title relevance score (checks current title, headline, and historical descriptions; max 25 pts)
     title = prof.get('current_title', '')
     headline = prof.get('headline', '')
     
-    # Exclude mismatched titles immediately
+    # filter out disqualified titles immediately
     for dt in disqualified_titles:
         if dt in title.lower():
             return -50.0
@@ -232,9 +218,7 @@ def get_title_score(prof, hist):
     return min(25.0, cur_sim * 15.0 + hist_score)
 
 def get_location_score(prof):
-    """
-    Scores geographic/relocation fit (out of 10.0).
-    """
+    # location fit score (prioritizes pune/noida/tier-1 relocation, max 10 pts)
     country = prof.get('country', '').lower().strip()
     loc = prof.get('location', '').lower()
     willing = prof.get('willing_to_relocate', False) or (prof.get('willing_to_relocate') == 'true')
@@ -248,9 +232,7 @@ def get_location_score(prof):
     return 4.0 if willing else 0.0
 
 def get_behavioral_multiplier(sigs):
-    """
-    Calculates behavioral modifier as a weighted average (preventing compound extremes) clipped to [0.5, 1.2].
-    """
+    # behavioral modifier using average of platform engagement metrics
     scores = []
     
     # 1. Recruiter Response Rate (weight 3)
@@ -265,7 +247,7 @@ def get_behavioral_multiplier(sigs):
             last_act = datetime.strptime(last_act_str, "%Y-%m-%d")
             curr_date = datetime(2026, 6, 20)
             days_inactive = (curr_date - last_act).days
-            # Correct branch execution order
+            # map inactivity to score decays
             if days_inactive > 360:
                 act_score = 0.5
             elif days_inactive > 180:
@@ -291,10 +273,7 @@ def get_behavioral_multiplier(sigs):
     return max(0.5, min(1.2, avg_score))
 
 def score_candidate(c):
-    """
-    Integrates all sub-scores and multipliers to return candidate rank score.
-    Returns -999.0 for honeypot profiles.
-    """
+    # master scoring wrapper (returns -999.0 for honeypots)
     if is_honeypot_candidate(c):
         return -999.0
         
@@ -312,19 +291,17 @@ def score_candidate(c):
     # Base Relevance Score (0 - 100 scale)
     raw_score = yoe_score + skills_score + title_score + loc_score
     
-    # Continuous consulting ratio multiplier
+    # apply continuous consulting penalty
     c_ratio = calculate_consulting_ratio(hist)
     consulting_mult = 1.0 - 0.5 * c_ratio
     
-    # Clips behavioral modifier
+    # get behavioral signal multiplier
     behavior_mult = get_behavioral_multiplier(sigs)
     
     return raw_score * consulting_mult * behavior_mult
 
 def generate_reasoning(c):
-    """
-    Dynamically generates personalized, fact-based justifications utilizing candidate attributes.
-    """
+    # generate fact-based justification sentence using top skills and signals
     prof = c.get('profile', {})
     skills = c.get('skills', [])
     sigs = c.get('redrob_signals', {})
