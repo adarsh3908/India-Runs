@@ -5,27 +5,11 @@ import argparse
 import csv
 from datetime import datetime
 
-# Set of primary skills relevant to the Senior AI Engineer role
-primary_skills = {
-    'retrieval-augmented generation', 'rag', 'vector databases', 'embeddings',
-    'sentence transformers', 'sentence-transformers', 'milvus', 'pinecone',
-    'weaviate', 'qdrant', 'faiss', 'elasticsearch', 'opensearch',
-    'information retrieval', 'semantic search', 'ndcg', 'mean average precision',
-    'map', 'mrr', 'bge', 'e5'
-}
-
-# Set of secondary skills relevant to the Senior AI Engineer role
-secondary_skills = {
-    'fine-tuning llms', 'fine-tuning', 'lora', 'qlora', 'peft', 'learning to rank',
-    'xgboost', 'python', 'machine learning', 'natural language processing', 'nlp',
-    'system design', 'a/b testing', 'evaluation frameworks', 'search engine',
-    'recommendation system', 'vector search', 'matching engine'
-}
-
-# Core consulting/services companies list (to filter consulting-only candidates)
+# Expanded consulting/IT services companies list
 consulting_companies = {
     'TCS', 'Infosys', 'Wipro', 'Accenture', 'Cognizant', 'Capgemini',
-    'Tech Mahindra', 'Mphasis', 'HCL', 'Mindtree', 'Genpact AI'
+    'Tech Mahindra', 'Mphasis', 'HCL', 'Mindtree', 'Genpact AI',
+    'Deloitte', 'PwC', 'EY', 'KPMG'
 }
 
 # Mismatched/disqualified titles for the AI engineering role
@@ -35,7 +19,7 @@ disqualified_titles = {
     'project manager', 'qa engineer'
 }
 
-# Founding years of startups to verify honeypot profiles
+# Startup founding years for honeypot check
 founding_years = {
     'Krutrim': 2023,
     'Sarvam AI': 2023,
@@ -53,16 +37,66 @@ founding_years = {
     'Zoho': 1996
 }
 
+# Dynamic target keywords from the Job Description
+jd_keywords = {
+    'rag', 'retrieval-augmented generation', 'vector', 'database', 'embeddings',
+    'sentence-transformers', 'transformers', 'pinecone', 'weaviate', 'qdrant',
+    'milvus', 'faiss', 'elasticsearch', 'opensearch', 'search', 'retrieval',
+    'semantic', 'matching', 'ranking', 'recommendation', 'nlp', 'language',
+    'ndcg', 'map', 'mrr', 'evaluation', 'xgboost', 'lora', 'qlora', 'peft',
+    'fine-tuning', 'python', 'backend', 'system design'
+}
+
+similarity_cache = {}
+
+def calculate_token_similarity(term, targets):
+    """
+    Computes substring match, token Jaccard similarity, and character n-gram overlap.
+    Allows flexibility for synonyms (e.g. 'ColBERT', 'hybrid search').
+    Uses module-level cache for major speedup across large datasets.
+    """
+    term_lower = term.lower().strip()
+    if term_lower in similarity_cache:
+        return similarity_cache[term_lower]
+        
+    best_sim = 0.0
+    for target in targets:
+        # 1. Exact or substring check
+        if term_lower == target or target in term_lower or term_lower in target:
+            sim = 1.0
+        else:
+            # 2. Token overlap Jaccard similarity
+            term_tokens = set(term_lower.split())
+            target_tokens = set(target.split())
+            if term_tokens and target_tokens:
+                intersect = term_tokens.intersection(target_tokens)
+                union = term_tokens.union(target_tokens)
+                sim = len(intersect) / len(union)
+            else:
+                sim = 0.0
+        
+        # 3. Simple character n-gram fallback (length 3)
+        if sim < 0.4 and len(term_lower) >= 3 and len(target) >= 3:
+            t_grams = set(term_lower[i:i+3] for i in range(len(term_lower)-2))
+            trg_grams = set(target[i:i+3] for i in range(len(target)-2))
+            char_sim = len(t_grams.intersection(trg_grams)) / len(t_grams.union(trg_grams))
+            sim = max(sim, char_sim)
+            
+        best_sim = max(best_sim, sim)
+        
+    similarity_cache[term_lower] = best_sim
+    return best_sim
+
 def is_honeypot_candidate(c):
     """
-    Identifies if a candidate has an impossible or contradictory profile (honeypot).
+    Identifies logically impossible or contradictory profiles (honeypots).
     """
     prof = c.get('profile', {})
     hist = c.get('career_history', [])
     edu = c.get('education', [])
     skills = c.get('skills', [])
     
-    # 1. work_before_edu: started full-time work > 6 years before college start
+    # 1. work_before_edu: started working > 15 years before starting college (impossible age conflict)
     edu_starts = [e.get('start_year') for e in edu if e.get('start_year')]
     if edu_starts:
         min_edu_start = min(edu_starts)
@@ -71,12 +105,12 @@ def is_honeypot_candidate(c):
             if sd:
                 try:
                     start_yr = int(sd.split('-')[0])
-                    if min_edu_start - start_yr > 6:
+                    if min_edu_start - start_yr > 15:
                         return True
                 except:
                     pass
                     
-    # 2. job_duration_mismatch: job duration_months deviates from actual dates by > 3 months
+    # 2. job_duration_mismatch: duration exceeds date calendar range by factor of 2 + 12 months (impossible inflated duration)
     for h in hist:
         sd = h.get('start_date')
         ed = h.get('end_date')
@@ -89,23 +123,24 @@ def is_honeypot_candidate(c):
                 else:
                     e_dt = datetime.strptime("2026-06-20", "%Y-%m-%d")
                 diff_months = (e_dt.year - s_dt.year) * 12 + (e_dt.month - s_dt.month)
-                if abs(diff_months - dur) > 3:
+                if dur > 2 * diff_months + 12:
                     return True
             except:
                 pass
                 
-    # 3. yoe_mismatch: profile YoE deviates from sum of career history job durations by > 3 years
-    sum_dur = sum(h.get('duration_months', 0) for h in hist) / 12.0
-    yoe = prof.get('years_of_experience', 0.0)
-    if abs(yoe - sum_dur) > 3.0:
+    # 3. education end_year precedes start_year
+    for e in edu:
+        sy = e.get('start_year')
+        ey = e.get('end_year')
+        if sy and ey and sy > ey:
+            return True
+            
+    # 4. zero_dur_skills: expert/advanced skills with 0 months duration (threshold: >= 5 skills)
+    z_skills = sum(1 for s in skills if s.get('proficiency') in ['expert', 'advanced'] and s.get('duration_months', 0) == 0)
+    if z_skills >= 5:
         return True
         
-    # 4. zero_dur_skills: expert/advanced skills with 0 months duration (threshold: >= 3 skills)
-    z_skills = [s['name'] for s in skills if s.get('proficiency') in ['expert', 'advanced'] and s.get('duration_months', 0) == 0]
-    if len(z_skills) >= 3:
-        return True
-        
-    # 5. founding_year_violations: working at a company before it was founded
+    # 5. founding_year_violations: working at a company before its founding year
     for h in hist:
         comp = h.get('company')
         sd = h.get('start_date')
@@ -119,108 +154,86 @@ def is_honeypot_candidate(c):
                 
     return False
 
-def is_consulting_only(hist):
+def calculate_consulting_ratio(hist):
     """
-    Checks if a candidate has only worked at consulting/IT services companies.
+    Computes fraction of candidate's career spent in IT consulting/services firms.
     """
     if not hist:
-        return False
+        return 0.0
+    consulting_months = 0
+    total_months = 0
     for h in hist:
+        dur = h.get('duration_months', 0)
         comp = h.get('company')
-        if comp not in consulting_companies:
-            return False
-    return True
+        total_months += dur
+        if comp in consulting_companies:
+            consulting_months += dur
+    if total_months == 0:
+        return 0.0
+    return consulting_months / total_months
 
 def get_yoe_score(yoe):
     """
-    Computes experience score. Peaks at 5.0 to 9.0 (score 10.0), asymmetric decay.
+    Computes normalized experience fit score (out of 25.0). Peaks at 5.0 to 9.0.
     """
     if 5.0 <= yoe <= 9.0:
-        return 10.0
+        return 25.0
     elif yoe < 5.0:
-        return max(0.0, 10.0 - (5.0 - yoe) * 2.0)
+        return max(0.0, 25.0 - (5.0 - yoe) * 5.0)
     else:
-        return max(0.0, 10.0 - (yoe - 9.0) * 0.5)
+        return max(0.0, 25.0 - (yoe - 9.0) * 1.5)
 
 def get_skills_score(skills):
     """
-    Computes a score matching candidates' skills against primary/secondary weights.
+    Computes a score based on semantic skill relevance and experience (out of 40.0).
     """
-    score = 0.0
+    if not skills:
+        return 0.0
+    total_match = 0.0
     for s in skills:
-        name = s.get('name', '').lower().strip()
+        name = s.get('name', '')
         prof = s.get('proficiency', 'beginner')
         dur = s.get('duration_months', 0)
         
-        weight = 0.0
-        if name in primary_skills:
-            weight = 10.0
-        elif name in secondary_skills:
-            weight = 5.0
-            
-        if weight > 0:
+        sim = calculate_token_similarity(name, jd_keywords)
+        if sim > 0.4:
             # Proficiency multiplier
-            prof_mult = 1.0
-            if prof == 'expert':
-                prof_mult = 1.2
-            elif prof == 'advanced':
-                prof_mult = 1.0
-            elif prof == 'intermediate':
-                prof_mult = 0.8
-            elif prof == 'beginner':
-                prof_mult = 0.5
-                
+            prof_mult = 1.2 if prof == 'expert' else (1.0 if prof == 'advanced' else (0.8 if prof == 'intermediate' else 0.5))
             # Duration multiplier (capped logarithmic scaling)
-            dur_mult = 1.0
-            if dur > 0:
-                dur_mult = min(1.2, math.log(dur + 1) / math.log(60))
-                
-            score += weight * prof_mult * dur_mult
-    return score
+            dur_mult = min(1.2, math.log(dur + 1) / math.log(60)) if dur > 0 else 1.0
+            total_match += sim * prof_mult * dur_mult
+            
+    return min(40.0, total_match * 8.0)
 
 def get_title_score(prof, hist):
     """
-    Scores candidates based on their current title, headline, and career history descriptions.
+    Scores current and historical titles against JD requirements (out of 25.0).
     """
-    title = prof.get('current_title', '').lower()
-    headline = prof.get('headline', '').lower()
+    title = prof.get('current_title', '')
+    headline = prof.get('headline', '')
     
-    # Exclude mismatched titles
+    # Exclude mismatched titles immediately
     for dt in disqualified_titles:
-        if dt in title:
+        if dt in title.lower():
             return -50.0
             
-    # Check for AI/ML keywords in current title / headline
-    ai_ml_keywords = ['ai engineer', 'ml engineer', 'machine learning', 'nlp engineer', 'search engineer', 'ranking engineer', 'recommendation engineer', 'applied scientist']
-    has_ai_ml = any(k in title or k in headline for k in ai_ml_keywords)
+    cur_sim = max(calculate_token_similarity(title, jd_keywords), calculate_token_similarity(headline, jd_keywords))
     
-    # Check for Tech/Dev keywords
-    tech_keywords = ['backend engineer', 'software engineer', 'data engineer', 'full stack developer', 'backend developer', 'full stack engineer']
-    has_tech = any(k in title or k in headline for k in tech_keywords)
-    
-    score = 0.0
-    if has_ai_ml:
-        score += 15.0
-    elif has_tech:
-        score += 8.0
-        
-    # Scan job descriptions in history for matching keyword phrases
-    desc_keywords = ['ranking', 'retrieval', 'vector search', 'rag', 'embeddings', 'semantic search', 'search engine', 'recommendation system', 'matching engine']
     desc_matches = 0
-    seen_keywords = set()
+    seen = set()
     for h in hist:
-        desc = h.get('description', '').lower()
-        for k in desc_keywords:
-            if k in desc and k not in seen_keywords:
+        desc = h.get('description', '')
+        for t in jd_keywords:
+            if t in desc.lower() and t not in seen:
                 desc_matches += 1
-                seen_keywords.add(k)
-    score += min(15.0, desc_matches * 5.0)
-    
-    return score
+                seen.add(t)
+                
+    hist_score = min(10.0, desc_matches * 2.5)
+    return min(25.0, cur_sim * 15.0 + hist_score)
 
 def get_location_score(prof):
     """
-    Scores candidates based on location/relocation preferences.
+    Scores geographic/relocation fit (out of 10.0).
     """
     country = prof.get('country', '').lower().strip()
     loc = prof.get('location', '').lower()
@@ -228,116 +241,89 @@ def get_location_score(prof):
     
     is_india = 'india' in country or loc in ['pune', 'noida', 'delhi ncr', 'mumbai', 'hyderabad', 'gurgaon', 'bangalore', 'chennai']
     tier1_cities = ['pune', 'noida', 'delhi', 'ncr', 'mumbai', 'hyderabad', 'gurgaon', 'bangalore', 'chennai', 'kolkata']
-    
     is_tier1 = any(city in loc for city in tier1_cities)
     
     if is_india:
-        if is_tier1:
-            return 5.0
-        elif willing:
-            return 4.0
-        else:
-            return 1.0
-    else:
-        if willing:
-            return 2.0
-        else:
-            return 0.0
+        return 10.0 if is_tier1 else (8.0 if willing else 2.0)
+    return 4.0 if willing else 0.0
 
 def get_behavioral_multiplier(sigs):
     """
-    Calculates behavioral engagement multiplier from platform activity.
+    Calculates behavioral modifier as a weighted average (preventing compound extremes) clipped to [0.5, 1.2].
     """
-    mult = 1.0
+    scores = []
     
-    # Recruiter response rate
+    # 1. Recruiter Response Rate (weight 3)
     rrr = sigs.get('recruiter_response_rate', 0.0)
-    mult *= (0.5 + 0.5 * rrr)
+    scores.append((rrr, 3))
     
-    # Last active
+    # 2. Last active days (weight 2)
     last_act_str = sigs.get('last_active_date', '')
+    act_score = 1.0
     if last_act_str:
         try:
             last_act = datetime.strptime(last_act_str, "%Y-%m-%d")
             curr_date = datetime(2026, 6, 20)
             days_inactive = (curr_date - last_act).days
-            if days_inactive > 180:
-                mult *= 0.7
-            elif days_inactive > 360:
-                mult *= 0.5
+            # Correct branch execution order
+            if days_inactive > 360:
+                act_score = 0.5
+            elif days_inactive > 180:
+                act_score = 0.7
         except:
             pass
-            
-    # Notice period
-    notice = sigs.get('notice_period_days', 90)
-    if notice <= 30:
-        mult *= 1.10
-    elif notice <= 60:
-        mult *= 1.0
-    elif notice <= 90:
-        mult *= 0.90
-    else:
-        mult *= 0.70
-        
-    # Interview completion rate
-    icr = sigs.get('interview_completion_rate', 1.0)
-    mult *= (0.8 + 0.2 * icr)
+    scores.append((act_score, 2))
     
-    # Open to work
-    if sigs.get('open_to_work_flag', False):
-        mult *= 1.10
-    else:
-        mult *= 0.95
-        
-    # Verified credentials
-    if sigs.get('verified_email', False) and sigs.get('verified_phone', False):
-        mult *= 1.05
-        
-    # GitHub activity
-    gh = sigs.get('github_activity_score', -1)
-    if gh > 20:
-        mult *= 1.05
-        
-    # Offer acceptance rate
-    oar = sigs.get('offer_acceptance_rate', -1)
-    if 0 <= oar < 0.2:
-        mult *= 0.80
-        
-    return mult
+    # 3. Notice period (weight 2)
+    notice = sigs.get('notice_period_days', 90)
+    notice_score = 1.1 if notice <= 30 else (1.0 if notice <= 60 else (0.8 if notice <= 90 else 0.5))
+    scores.append((notice_score, 2))
+    
+    # 4. Open to Work Flag (weight 1)
+    otw = 1.1 if sigs.get('open_to_work_flag', False) else 0.95
+    scores.append((otw, 1))
+    
+    # Weighted average
+    total_score = sum(val * wt for val, wt in scores)
+    total_wt = sum(wt for val, wt in scores)
+    avg_score = total_score / total_wt
+    
+    return max(0.5, min(1.2, avg_score))
 
 def score_candidate(c):
     """
-    Scores a single candidate record based on all criteria.
-    Returns -999.0 if candidate is a honeypot.
+    Integrates all sub-scores and multipliers to return candidate rank score.
+    Returns -999.0 for honeypot profiles.
     """
     if is_honeypot_candidate(c):
         return -999.0
         
     prof = c.get('profile', {})
     hist = c.get('career_history', [])
-    skills = c.get('skills', [])
     sigs = c.get('redrob_signals', {})
     
     yoe = prof.get('years_of_experience', 0.0)
     
     yoe_score = get_yoe_score(yoe)
-    skills_score = get_skills_score(skills)
+    skills_score = get_skills_score(c.get('skills', []))
     title_score = get_title_score(prof, hist)
     loc_score = get_location_score(prof)
     
+    # Base Relevance Score (0 - 100 scale)
     raw_score = yoe_score + skills_score + title_score + loc_score
     
-    # Heavy penalty for consulting/services-only candidates
-    if is_consulting_only(hist):
-        raw_score *= 0.5
-        
+    # Continuous consulting ratio multiplier
+    c_ratio = calculate_consulting_ratio(hist)
+    consulting_mult = 1.0 - 0.5 * c_ratio
+    
+    # Clips behavioral modifier
     behavior_mult = get_behavioral_multiplier(sigs)
     
-    return raw_score * behavior_mult
+    return raw_score * consulting_mult * behavior_mult
 
 def generate_reasoning(c):
     """
-    Generates a personalized, detailed, fact-based 1-2 sentence justification.
+    Dynamically generates personalized, fact-based justifications utilizing candidate attributes.
     """
     prof = c.get('profile', {})
     skills = c.get('skills', [])
@@ -349,34 +335,37 @@ def generate_reasoning(c):
     rrr = sigs.get('recruiter_response_rate', 0.0)
     notice = sigs.get('notice_period_days', 90)
     
-    # Extract match skills
+    # Find top matching skills
     cand_skills = [s.get('name') for s in skills if s.get('name')]
-    match_prim = [s for s in cand_skills if s.lower() in primary_skills]
-    match_sec = [s for s in cand_skills if s.lower() in secondary_skills]
+    matched = []
+    for cs in cand_skills:
+        if calculate_token_similarity(cs, jd_keywords) > 0.5:
+            matched.append(cs)
+            
+    top_skills = matched[:2]
+    skills_phrase = f"with experience in {', '.join(top_skills)}" if top_skills else "with strong backend capabilities"
+    act_phrase = f"highly active on the platform ({int(rrr * 100)}% response rate)"
     
-    matched = match_prim[:2]
-    if len(matched) < 2:
-        matched += match_sec[:(2 - len(matched))]
+    # Handle location / notice gaps
+    if notice > 60:
+        gap_phrase = f"though notice period is {notice} days"
+    elif 'india' not in prof.get('country', '').lower() and sigs.get('willing_to_relocate'):
+        gap_phrase = "willing to relocate to India"
+    else:
+        gap_phrase = f"based in {loc}"
         
-    skills_str = f"with skills in {', '.join(matched)}" if matched else "with strong backend capabilities"
-    eng_str = f"excellent activity ({int(rrr * 100)}% response rate)"
-    
-    # Location/Notice checks
-    concern = f"notice period is {notice} days" if notice > 60 else f"located in {loc}"
-    
-    # Variance template based on ID
     variant = int(c['candidate_id'].split('_')[-1]) % 3
     if variant == 0:
-        return f"{title} offering {yoe} years of experience, {skills_str}. Candidate has {eng_str} and is {concern}."
+        return f"{title} offering {yoe} years of experience, specializing in {skills_phrase}. The candidate is {act_phrase} and {gap_phrase}."
     elif variant == 1:
-        return f"Founding-grade {title} ({yoe} years YoE) {skills_str}. Good product mindset with {eng_str}; {concern}."
+        return f"Product-oriented {title} ({yoe} years YoE) {skills_phrase}. Displays {act_phrase}; currently {gap_phrase}."
     else:
-        return f"Applied AI engineer with {yoe} years experience as a {title}, {skills_str}. Highly responsive ({int(rrr * 100)}% message rate) and {concern}."
+        return f"Applied AI professional ({yoe} years experience) currently working as a {title}, {skills_phrase}. {act_phrase} and {gap_phrase}."
 
 def main():
     parser = argparse.ArgumentParser(description="Redrob Candidate Ranking System")
-    parser.options = parser.add_argument("--candidates", required=True, help="Path to candidates.jsonl file")
-    parser.options = parser.add_argument("--out", required=True, help="Path to write the submission.csv file")
+    parser.add_argument("--candidates", required=True, help="Path to candidates.jsonl file")
+    parser.add_argument("--out", required=True, help="Path to write the submission.csv file")
     args = parser.parse_args()
     
     candidates = []
