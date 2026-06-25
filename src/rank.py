@@ -217,11 +217,11 @@ def get_title_score(prof, hist):
     hist_score = min(10.0, desc_matches * 2.5)
     return min(25.0, cur_sim * 15.0 + hist_score)
 
-def get_location_score(prof):
+def get_location_score(prof, willing_to_relocate):
     # location fit score (prioritizes pune/noida/tier-1 relocation, max 10 pts)
     country = prof.get('country', '').lower().strip()
     loc = prof.get('location', '').lower()
-    willing = prof.get('willing_to_relocate', False) or (prof.get('willing_to_relocate') == 'true')
+    willing = willing_to_relocate or (willing_to_relocate == 'true')
     
     is_india = 'india' in country or loc in ['pune', 'noida', 'delhi ncr', 'mumbai', 'hyderabad', 'gurgaon', 'bangalore', 'chennai']
     tier1_cities = ['pune', 'noida', 'delhi', 'ncr', 'mumbai', 'hyderabad', 'gurgaon', 'bangalore', 'chennai', 'kolkata']
@@ -286,7 +286,7 @@ def score_candidate(c):
     yoe_score = get_yoe_score(yoe)
     skills_score = get_skills_score(c.get('skills', []))
     title_score = get_title_score(prof, hist)
-    loc_score = get_location_score(prof)
+    loc_score = get_location_score(prof, sigs.get('willing_to_relocate', False))
     
     # Base Relevance Score (0 - 100 scale)
     raw_score = yoe_score + skills_score + title_score + loc_score
