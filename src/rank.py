@@ -188,7 +188,7 @@ def get_skills_score(skills):
             # Proficiency multiplier
             prof_mult = 1.2 if prof == 'expert' else (1.0 if prof == 'advanced' else (0.8 if prof == 'intermediate' else 0.5))
             # Duration multiplier (capped logarithmic scaling)
-            dur_mult = min(1.2, math.log(dur + 1) / math.log(60)) if dur > 0 else 1.0
+            dur_mult = min(1.2, math.log(dur + 1) / math.log(60)) if dur > 0 else 0.1
             total_match += sim * prof_mult * dur_mult
             
     return min(40.0, total_match * 8.0)
@@ -279,7 +279,7 @@ def score_candidate(c):
         
     prof = c.get('profile', {})
     hist = c.get('career_history', [])
-    sigs = c.get('redrob_signals', {})
+    sigs = c.get('redrob_signals') or {}
     
     yoe = prof.get('years_of_experience', 0.0)
     
@@ -331,7 +331,10 @@ def generate_reasoning(c):
     else:
         gap_phrase = f"based in {loc}"
         
-    variant = int(c['candidate_id'].split('_')[-1]) % 3
+    try:
+        variant = int(c['candidate_id'].split('_')[-1]) % 3
+    except (ValueError, IndexError):
+        variant = 0
     if variant == 0:
         return f"{title} offering {yoe} years of experience, specializing in {skills_phrase}. The candidate is {act_phrase} and {gap_phrase}."
     elif variant == 1:
